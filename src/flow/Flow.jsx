@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -11,65 +11,85 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
+import workflowData from "../data/data"; // Static import of the data
 
 const nodeDefaults = {
   sourcePosition: Position.Right,
   targetPosition: Position.Left,
 };
 
-const initialNodes = [
-  {
-    id: "1",
-    position: { x: 0, y: 150 },
-    data: { label: "default style 1" },
-    ...nodeDefaults,
-  },
-  {
-    id: "2",
-    position: { x: 250, y: 0 },
-    data: { label: "default style 2" },
-    ...nodeDefaults,
-  },
-  {
-    id: "3",
-    position: { x: 250, y: 150 },
-    data: { label: "default style 3" },
-    ...nodeDefaults,
-  },
-  {
-    id: "4",
-    position: { x: 250, y: 300 },
-    data: { label: "default style 4" },
-    ...nodeDefaults,
-  },
-];
-
-const initialEdges = [
-  {
-    id: "e1-2",
-    source: "1",
-    target: "2",
-    animated: true,
-  },
-  {
-    id: "e1-3",
-    source: "1",
-    target: "3",
-  },
-  {
-    id: "e1-4",
-    source: "1",
-    target: "4",
-  },
-];
-
 const Flow = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [editingNodeId, setEditingNodeId] = useState(null);
   const [newTitle, setNewTitle] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedSubNode, setSelectedSubNode] = useState(null);
+
+  // Function to convert JSON structure to nodes and edges
+  const generateFlowFromData = (data, startX = 0, startY = 0, levelGap = 200, siblingGap = 55) => {
+    const nodes = [];
+    const edges = [];
+
+    const processNode = (node, parentId = null, level = 0, verticalOffset = 0) => {
+      const id = node.id;
+
+      // Calculate position dynamically based on the level and vertical offset
+      const nodeX = startX + level * levelGap; // Horizontal spacing increases with level
+      const nodeY = startY + verticalOffset * siblingGap; // Vertical spacing for siblings
+
+      // Determine if the node is a top-level node (main node)
+      const isMainNode = parentId === null;
+
+      // Add the current node with light green for main nodes
+      nodes.push({
+        id: id,
+        position: { x: nodeX, y: nodeY },
+        data: { label: node.title },
+        style: {
+          backgroundColor: isMainNode ? "lightgreen" : "#ffffff", // Light green for main nodes, white for sub-nodes
+          border: "1px solid #333", // Optional: add border for better visibility
+          padding: "10px",
+        },
+        ...nodeDefaults,
+      });
+
+      // Add an edge if there's a parent
+      if (parentId) {
+        edges.push({
+          id: `e-${parentId}-${id}`,
+          source: parentId,
+          target: id,
+          animated: true,
+        });
+      }
+
+      // Process children recursively
+      let childOffset = verticalOffset; // Track vertical positioning for children
+      node.children.forEach((child, index) => {
+        childOffset = processNode(child, id, level + 1, childOffset);
+        childOffset++; // Move down for the next sibling
+      });
+
+      // Return the current vertical offset after placing this node and its subtree
+      return childOffset;
+    };
+
+    // Process each top-level node
+    let offset = 0; // Track the vertical position for top-level nodes
+    data.forEach((node) => {
+      offset = processNode(node, null, 0, offset);
+      offset++; // Add spacing between top-level nodes
+    });
+
+    return { nodes, edges };
+  };
+
+  // Initialize nodes and edges from static data
+  useEffect(() => {
+    const { nodes, edges } = generateFlowFromData(workflowData.nodes); // Pass all root nodes
+    setNodes(nodes);
+    setEdges(edges);
+  }, []);
 
   const onConnect = useCallback(
     (params) => setEdges((els) => addEdge(params, els)),
@@ -97,41 +117,6 @@ const Flow = () => {
     }
   };
 
-  const handleAddSubNode = () => {
-    const newId = `${editingNodeId}-${Date.now()}`;
-    const newNode = {
-      id: newId,
-      position: { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 },
-      data: { label: `New Subnode` },
-      ...nodeDefaults,
-    };
-    setNodes((nds) => [...nds, newNode]);
-    setEdges((eds) => [...eds, { id: `e-${editingNodeId}-${newId}`, source: editingNodeId, target: newId }]);
-  };
-
-  const handleEditSubNode = (nodeId) => {
-    setSelectedSubNode(nodeId);
-    const subNode = nodes.find((node) => node.id === nodeId);
-    setNewTitle(subNode?.data?.label || "");
-  };
-
-  const handleSaveSubNodeTitle = () => {
-    if (selectedSubNode) {
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === selectedSubNode ? { ...n, data: { ...n.data, label: newTitle } } : n
-        )
-      );
-      setSelectedSubNode(null);
-      setNewTitle("");
-    }
-  };
-
-  const handleDeleteSubNode = (nodeId) => {
-    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
-  };
-
   return (
     <div style={{ width: "100%", height: "100vh" }}>
       <ReactFlow
@@ -149,7 +134,18 @@ const Flow = () => {
       </ReactFlow>
 
       {drawerVisible && (
-        <div style={{ position: "absolute", top: 0, right: 0, width: "300px", height: "100%", background: "white", boxShadow: "-2px 0 5px rgba(0,0,0,0.2)", padding: "20px" }}>
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            width: "300px",
+            height: "100%",
+            background: "white",
+            boxShadow: "-2px 0 5px rgba(0,0,0,0.2)",
+            padding: "20px",
+          }}
+        >
           <h3>Node Details</h3>
           <div>
             <label>Edit Title:</label>
@@ -161,34 +157,6 @@ const Flow = () => {
             />
             <button onClick={handleSaveTitle}>Save</button>
           </div>
-
-          <div style={{ marginTop: "20px" }}>
-            <button onClick={handleAddSubNode}>Add Subnode</button>
-          </div>
-
-          <div style={{ marginTop: "20px" }}>
-            <h4>Subnodes:</h4>
-            {nodes.filter((n) => n.id.startsWith(editingNodeId)).map((subNode) => (
-              <div key={subNode.id} style={{ marginBottom: "10px" }}>
-                <span>{subNode.data.label}</span>
-                <button onClick={() => handleEditSubNode(subNode.id)}>Edit</button>
-                <button onClick={() => handleDeleteSubNode(subNode.id)}>Delete</button>
-              </div>
-            ))}
-          </div>
-
-          {selectedSubNode && (
-            <div style={{ marginTop: "20px" }}>
-              <label>Edit Subnode Title:</label>
-              <input
-                type="text"
-                value={newTitle}
-                onChange={handleTitleChange}
-                placeholder="Enter new subnode title"
-              />
-              <button onClick={handleSaveSubNodeTitle}>Save</button>
-            </div>
-          )}
         </div>
       )}
     </div>
