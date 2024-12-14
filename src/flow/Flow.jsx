@@ -11,7 +11,6 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import workflowData from "../data/data"; // Static import of the data
 
 const nodeDefaults = {
   sourcePosition: Position.Right,
@@ -24,6 +23,8 @@ const Flow = () => {
   const [editingNodeId, setEditingNodeId] = useState(null);
   const [newTitle, setNewTitle] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [apiInput, setApiInput] = useState(""); // State for API input field
+  const [apiResponse, setApiResponse] = useState(null); // State to store API response
 
   // Function to convert JSON structure to nodes and edges
   const generateFlowFromData = (data, startX = 0, startY = 0, levelGap = 200, siblingGap = 55) => {
@@ -84,12 +85,14 @@ const Flow = () => {
     return { nodes, edges };
   };
 
-  // Initialize nodes and edges from static data
+  // Initialize nodes and edges from the API response
   useEffect(() => {
-    const { nodes, edges } = generateFlowFromData(workflowData.nodes); // Pass all root nodes
-    setNodes(nodes);
-    setEdges(edges);
-  }, []);
+    if (apiResponse && apiResponse.nodes) {
+      const { nodes, edges } = generateFlowFromData(apiResponse.nodes); // Pass nodes from API response
+      setNodes(nodes);
+      setEdges(edges);
+    }
+  }, [apiResponse]);
 
   const onConnect = useCallback(
     (params) => setEdges((els) => addEdge(params, els)),
@@ -114,6 +117,24 @@ const Flow = () => {
         )
       );
       setDrawerVisible(false);
+    }
+  };
+
+  // Function to handle API request
+  const handleApiRequest = async () => {
+    try {
+      const response = await fetch("http://localhost:3000/useGeminiAI", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input: apiInput }),
+      });
+      const data = await response.json();
+      console.log(data);
+      setApiResponse(data); // Store the API response
+    } catch (error) {
+      console.error("Error with API request:", error);
     }
   };
 
@@ -159,6 +180,20 @@ const Flow = () => {
           </div>
         </div>
       )}
+
+      {/* Input field for API request */}
+      <div style={{ position: "absolute", top: "20px", left: "20px", zIndex: 10 }}>
+        <input
+          type="text"
+          value={apiInput}
+          onChange={(e) => setApiInput(e.target.value)}
+          placeholder="Enter your input"
+          style={{ padding: "10px", marginRight: "10px" }}
+        />
+        <button onClick={handleApiRequest} style={{ padding: "10px" }}>
+          Submit to API
+        </button>
+      </div>
     </div>
   );
 };
