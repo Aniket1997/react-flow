@@ -39,7 +39,6 @@ app.post("/useGeminiAI", async (req, res) => {
     // Create a dynamic prompt for the Gemini model
     const prompt = `Generate a valid JSON object with detailed step-by-step guidance on the topic "${userInput}". 
     Ensure the JSON follows this structure:
-
     {
     "workflowId": "workflow_topic_id",
     "title": "Workflow Title",
